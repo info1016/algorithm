@@ -234,7 +234,10 @@
             <section id="sec-river" class="content-section flex flex-col h-full">
                 <div class="flex justify-between items-end mb-2">
                     <h2 class="text-2xl font-bold text-teal-900">4. 🎯 강 건너기 퍼즐</h2>
-                    <button onclick="resetRiverGame()" class="text-sm bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition"><i class="fas fa-rotate-right mr-1"></i>처음부터</button>
+                    <div class="flex gap-2">
+                        <button onclick="undoRiverGame()" class="text-sm bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg font-bold hover:bg-amber-200 transition"><i class="fas fa-rotate-left mr-1"></i>되추적하기</button>
+                        <button onclick="resetRiverGame()" class="text-sm bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition"><i class="fas fa-rotate-right mr-1"></i>처음부터</button>
+                    </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200 font-medium">
                     <i class="fas fa-triangle-exclamation text-yellow-500 mr-1"></i> <strong>조건:</strong> 배에는 <strong>농부 + 1개</strong>만 더 탈 수 있습니다. <br>
@@ -244,6 +247,22 @@
                 <div class="flex flex-col lg:flex-row gap-4 flex-grow h-[450px]">
                     <!-- 게임판 영역 -->
                     <div class="flex-[1.5] bg-green-50 rounded-2xl border border-green-200 overflow-hidden relative flex flex-col shadow-sm">
+                        
+                        <!-- 🎯 피드백을 위한 게임판 내부 오버레이 (성공/실패 시 게임판 영역만 어두워지게) -->
+                        <div id="game-overlay" class="absolute inset-0 bg-black/80 z-50 hidden flex-col items-center justify-center text-white backdrop-blur-sm transition-opacity duration-300 opacity-0 px-4">
+                            <div id="overlay-icon" class="text-6xl mb-4 text-center">🎉</div>
+                            <h2 id="overlay-title" class="text-3xl font-black mb-2 text-green-400 text-center">목표 상태 도달!</h2>
+                            <p id="overlay-desc" class="font-medium mb-6 text-gray-200 text-center">축하합니다! 무사히 강을 건넜습니다.</p>
+                            <div class="flex justify-center gap-3 mt-2">
+                                <button onclick="undoRiverGame()" class="px-5 py-2.5 bg-amber-500 text-white rounded-full font-black hover:bg-amber-600 transition shadow-[0_0_15px_rgba(245,158,11,0.5)] text-base">
+                                    <i class="fas fa-rotate-left mr-1"></i> 되추적하기
+                                </button>
+                                <button onclick="closeOverlay()" class="px-5 py-2.5 bg-indigo-500 text-white rounded-full font-black hover:bg-indigo-600 transition shadow-[0_0_15px_rgba(99,102,241,0.5)] text-base">
+                                    처음부터 <i class="fas fa-rotate-right ml-1"></i>
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- 강과 양쪽 둑 캔버스 -->
                         <div class="flex-grow flex relative">
                             <!-- 왼쪽 둑 -->
@@ -301,16 +320,6 @@
             </section>
 
         </main>
-    </div>
-
-    <!-- 게임 결과 모달 -->
-    <div id="game-modal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 hidden opacity-0 transition-opacity">
-        <div class="bg-white rounded-2xl p-8 max-w-md w-full text-center transform scale-90 transition-transform" id="modal-content">
-            <div id="modal-icon" class="text-6xl mb-4">💥</div>
-            <h2 id="modal-title" class="text-2xl font-black mb-2 text-gray-800">게임 오버!</h2>
-            <p id="modal-desc" class="text-gray-600 font-medium mb-6">늑대가 염소를 잡아먹었습니다!</p>
-            <button onclick="closeModal()" class="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 w-full transition">다시 도전하기</button>
-        </div>
     </div>
 
     <script>
@@ -424,6 +433,7 @@
         let rvState = { farmer: 0, wolf: 0, goat: 0, cabbage: 0 };
         let rvPassenger = null; // 'wolf', 'goat', 'cabbage' 중 하나 또는 null
         let stepCount = 0;
+        let stateHistory = []; // 되추적하기(Undo)를 위한 상태 저장 배열
 
         const emojis = { wolf: '🐺', goat: '🐐', cabbage: '🥬' };
         const names = { wolf: '늑대', goat: '염소', cabbage: '배추' };
@@ -432,6 +442,7 @@
             rvState = { farmer: 0, wolf: 0, goat: 0, cabbage: 0 };
             rvPassenger = null;
             stepCount = 0;
+            stateHistory = []; // 배열 초기화
             document.getElementById('history-tbody').innerHTML = '';
             recordHistory();
             renderRiver();
@@ -494,6 +505,12 @@
         }
 
         function crossRiver() {
+            // 이동 전 현재 상태를 깊은 복사하여 저장 (되추적하기 용도)
+            stateHistory.push({
+                rvState: JSON.parse(JSON.stringify(rvState)),
+                rvPassenger: rvPassenger
+            });
+
             // 배와 승객의 위치를 반대편으로 변경
             rvState.farmer = rvState.farmer === 0 ? 1 : 0;
             if (rvPassenger) {
@@ -508,7 +525,7 @@
             setTimeout(() => {
                 const result = checkRules();
                 if (result !== 'SAFE') {
-                    showModal(result);
+                    showOverlay(result); // 모달 대신 내부 오버레이 호출
                 }
             }, 800); // css transition 시간(700ms) 이후 실행
         }
@@ -556,49 +573,73 @@
             tbody.prepend(tr);
         }
 
-        function showModal(type) {
-            const modal = document.getElementById('game-modal');
-            const content = document.getElementById('modal-content');
-            const title = document.getElementById('modal-title');
-            const desc = document.getElementById('modal-desc');
-            const icon = document.getElementById('modal-icon');
+        // --- 피드백을 위한 게임판 내부 오버레이 함수 ---
+        function showOverlay(type) {
+            const overlay = document.getElementById('game-overlay');
+            const title = document.getElementById('overlay-title');
+            const desc = document.getElementById('overlay-desc');
+            const icon = document.getElementById('overlay-icon');
 
-            modal.classList.remove('hidden');
-            // 약간의 딜레이 후 opacity 1 적용 (애니메이션)
-            setTimeout(() => {
-                modal.classList.remove('opacity-0');
-                content.classList.remove('scale-90');
-            }, 10);
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex'); // 추가: flex 속성을 켜주어야 수직/수평 중앙 정렬이 적용됨
+
+            // 애니메이션을 위한 딜레이 처리
+            setTimeout(() => overlay.classList.remove('opacity-0'), 10);
 
             if (type === 'SUCCESS') {
                 icon.innerText = '🎉';
-                title.innerText = '목표 상태 도달!';
-                title.className = "text-2xl font-black mb-2 text-green-600";
+                title.innerText = '성공! 목표 상태 도달';
+                title.className = "text-3xl font-black mb-2 text-green-400 text-center";
                 desc.innerText = `축하합니다! ${stepCount}단계 만에 모두 무사히 강을 건넜습니다.`;
             } else if (type === 'WOLF_EATS_GOAT') {
                 icon.innerText = '🐺🍖🐐';
                 title.innerText = '알고리즘 실패!';
-                title.className = "text-2xl font-black mb-2 text-red-600";
+                title.className = "text-3xl font-black mb-2 text-red-400 text-center";
                 desc.innerText = "농부가 없는 사이 늑대가 염소를 잡아먹었습니다.";
             } else if (type === 'GOAT_EATS_CABBAGE') {
                 icon.innerText = '🐐🥗🥬';
                 title.innerText = '알고리즘 실패!';
-                title.className = "text-2xl font-black mb-2 text-red-600";
+                title.className = "text-3xl font-black mb-2 text-red-400 text-center";
                 desc.innerText = "농부가 없는 사이 염소가 양배추를 먹어버렸습니다.";
             }
         }
 
-        function closeModal() {
-            const modal = document.getElementById('game-modal');
-            const content = document.getElementById('modal-content');
-            
-            modal.classList.add('opacity-0');
-            content.classList.add('scale-90');
-            
+        function closeOverlay() {
+            const overlay = document.getElementById('game-overlay');
+            overlay.classList.add('opacity-0');
             setTimeout(() => {
-                modal.classList.add('hidden');
-                initRiverGame(); // 모달 닫을 때 리셋
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex'); // 추가
+                initRiverGame(); // 오버레이를 닫으면서 게임 리셋
             }, 300);
+        }
+
+        function undoRiverGame() {
+            if (stateHistory.length === 0) {
+                alert("더 이상 되돌릴 수 없습니다.");
+                return;
+            }
+            // 이전 상태 꺼내기
+            const prevState = stateHistory.pop();
+            rvState = prevState.rvState;
+            rvPassenger = prevState.rvPassenger;
+            stepCount--;
+
+            // 표(히스토리) UI에서 최신 기록 1줄 삭제
+            const tbody = document.getElementById('history-tbody');
+            if(tbody.firstElementChild) tbody.firstElementChild.remove();
+
+            renderRiver();
+            
+            // 만약 오버레이(게임 오버 창)가 떠 있다면 닫기 (초기화는 안 함)
+            const overlay = document.getElementById('game-overlay');
+            if (!overlay.classList.contains('hidden')) {
+                overlay.classList.add('opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    overlay.classList.remove('flex'); // 추가
+                }, 300);
+            }
         }
 
         function resetRiverGame() {
